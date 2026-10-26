@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<style>
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;font:14px/1.5 system-ui,sans-serif}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>Kumano Kodo Photo Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: map fills the left (top on phones); a "stop" panel follows the walk photo by photo, with a height profile and filmstrip. */
+:root{
+  --paper:#EEF1EB; --land:#F8F9F5; --sea:#D3DFE0; --coast:#A9B9B2;
+  --ink:#1D2621; --muted:#5B6961; --rule:#CCD5CC; --cedar:#2E5A45;
+  --shu:#C23F2B; --shu-soft:rgba(194,63,43,.14);
+  --display:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",Georgia,serif;
+  --body:"Zen Kaku Gothic New","Hiragino Sans","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#121714; --land:#1B231F; --sea:#0D181B; --coast:#3A4A43;
+  --ink:#E5EAE3; --muted:#97A59C; --rule:#2C3832; --cedar:#86B89C;
+  --shu:#E8664E; --shu-soft:rgba(232,102,78,.18); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#121714; --land:#1B231F; --sea:#0D181B; --coast:#3A4A43;
+  --ink:#E5EAE3; --muted:#97A59C; --rule:#2C3832; --cedar:#86B89C;
+  --shu:#E8664E; --shu-soft:rgba(232,102,78,.18); color-scheme:dark}
+
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 420px;height:100%}
+.mapwrap{position:relative;min-width:0;background:var(--sea);overflow:hidden}
+#map{width:100%;height:100%;display:block;touch-action:none;cursor:grab;user-select:none}
+#map.dragging{cursor:grabbing}
+.panel{overflow-y:auto;border-left:1px solid var(--rule);display:flex;flex-direction:column;gap:20px;
+  padding-block:24px 32px;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+
+header h1{font-family:var(--display);font-weight:700;font-size:1.75rem;line-height:1.15;margin:0;text-wrap:balance}
+header p{margin:6px 0 0;color:var(--muted);font-size:.9rem}
+
+.stop{display:flex;flex-direction:column;gap:12px}
+.photo{position:relative;margin:0;border-radius:6px;overflow:hidden;background:var(--land);border:1px solid var(--rule);cursor:zoom-in}
+.photo img{display:block;width:100%;max-height:48vh;object-fit:contain;background:var(--land)}
+.eyebrow{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--cedar);font-weight:700;font-variant-numeric:tabular-nums}
+.stop h2{font-family:var(--display);font-weight:700;font-size:1.35rem;line-height:1.25;margin:2px 0 0;text-wrap:balance}
+.stop p{margin:0;max-width:62ch}
+.meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:.82rem;font-variant-numeric:tabular-nums}
+
+.nav{display:flex;align-items:center;gap:10px}
+.nav button{font:inherit;font-weight:500;border:1px solid var(--rule);background:var(--land);color:var(--ink);
+  border-radius:999px;padding:8px 16px;cursor:pointer}
+.nav button:hover:not(:disabled){border-color:var(--cedar)}
+.nav button:disabled{opacity:.4;cursor:default}
+.nav .count{margin-left:auto;color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
+button:focus-visible,.thumb:focus-visible,.photo:focus-visible{outline:2px solid var(--shu);outline-offset:2px}
+
+.section-label{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 6px}
+.profile svg{width:100%;height:auto;display:block;overflow:visible}
+
+.strip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.thumb{flex:0 0 auto;width:62px;height:62px;border-radius:5px;overflow:hidden;border:2px solid transparent;padding:0;background:var(--land);cursor:pointer}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb[aria-current="true"]{border-color:var(--shu)}
+
+.note{font-size:.78rem;color:var(--muted);border-top:1px solid var(--rule);padding-top:12px;margin:0}
+
+.mapctl{position:absolute;right:calc(12px + env(safe-area-inset-right,0px));top:12px;display:flex;flex-direction:column;gap:6px}
+.mapctl button{width:36px;height:36px;border-radius:8px;border:1px solid var(--rule);background:var(--land);color:var(--ink);font:500 18px/1 var(--body);cursor:pointer}
+.legend{position:absolute;left:calc(12px + env(safe-area-inset-left,0px));bottom:12px;background:var(--land);border:1px solid var(--rule);
+  border-radius:6px;padding:6px 10px;font-size:.75rem;color:var(--muted);display:flex;align-items:center;gap:8px}
+.legend svg{flex:0 0 auto}
+
+/* map text */
+.town{font-family:var(--body);fill:var(--muted);font-weight:500;letter-spacing:.06em;text-transform:uppercase}
+.sea-label{font-family:var(--display);fill:var(--coast);font-style:italic;letter-spacing:.2em}
+.pin{cursor:pointer}
+.pin circle{fill:var(--land);stroke:var(--ink)}
+.pin text{fill:var(--ink);font-family:var(--body);font-weight:700;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.pin.active circle{fill:var(--shu);stroke:var(--shu)}
+.pin.active text{fill:#fff}
+.halo{fill:var(--shu-soft)}
+
+/* lightbox */
+.lightbox{position:fixed;inset:0;z-index:20;background:rgba(10,14,12,.92);display:flex;align-items:center;justify-content:center;
+  padding:calc(16px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));cursor:zoom-out}
+.lightbox[hidden]{display:none}
+.lightbox img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px}
+
+@media (max-width:820px){
+  .app{display:block;height:auto}
+  .mapwrap{height:46vh;min-height:280px}
+  .panel{border-left:0;overflow:visible}
+  .photo img{max-height:62vh}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <div class="mapwrap">
+    <svg id="map" role="img" aria-label="Map of the walk on the Kii Peninsula with numbered photo locations"></svg>
+    <div class="mapctl">
+      <button id="zin" aria-label="Zoom in">+</button>
+      <button id="zout" aria-label="Zoom out">−</button>
+      <button id="zall" aria-label="Show whole walk" title="Show whole walk">⤢</button>
+    </div>
+    <div class="legend">
+      <svg width="34" height="8" aria-hidden="true"><line x1="0" y1="4" x2="34" y2="4" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4"/></svg>
+      Line joins the photos in order, not the exact trail
+    </div>
+  </div>
+
+  <aside class="panel">
+    <header>
+      <h1>Kumano Kodo</h1>
+      <p>Five days on foot across the Kii Peninsula, 20–24 October 2026</p>
+    </header>
+
+    <section class="stop" aria-live="polite">
+      <figure class="photo" id="photo" tabindex="0" aria-label="Open photo full size"><img id="photoImg" alt=""></figure>
+      <div>
+        <div class="eyebrow" id="when"></div>
+        <h2 id="title"></h2>
+      </div>
+      <p id="caption"></p>
+      <div class="meta"><span id="alt"></span><span id="coords"></span></div>
+      <div class="nav">
+        <button id="prev">← Previous</button>
+        <button id="next">Next →</button>
+        <span class="count" id="count"></span>
+      </div>
+    </section>
+
+    <section class="profile">
+      <p class="section-label">Height above sea level at each photo</p>
+      <svg id="profile" viewBox="0 0 380 120" role="img" aria-label="Height of each photo above sea level across the five days"></svg>
+    </section>
+
+    <section>
+      <p class="section-label">All photos</p>
+      <div class="strip" id="strip"></div>
+    </section>
+
+    <p class="note">Photo locations and times come from the camera. Coastline © Natural Earth.</p>
+  </aside>
+</div>
+
+<div class="lightbox" id="lightbox" hidden><img id="lbImg" alt=""></div>
+
+<script>
+const STOPS = [{"id": "IMG_2052", "date": "2026-10-20", "time": "09:37", "lat": 33.774525, "lon": 135.502778, "alt": 94, "title": "Setting off from Takijiri", "caption": "The whole group at the start of the Nakahechi trail. Rain jackets on and the river running high and brown.", "photo": "photos/IMG_2052.jpg", "thumb": "thumbs/IMG_2052.jpg"}, {"id": "IMG_2096", "date": "2026-10-20", "time": "15:37", "lat": 33.814742, "lon": 135.588592, "alt": 415, "title": "Osakamoto-oji stamp box", "caption": "One of the small wayside shrines, called oji, that line the route. Each has a stamp to collect in your pilgrim's book.", "photo": "photos/IMG_2096.jpg", "thumb": "thumbs/IMG_2096.jpg"}, {"id": "IMG_2141", "date": "2026-10-21", "time": "09:22", "lat": 33.838722, "lon": 135.667708, "alt": 496, "title": "Back on the trail", "caption": "Morning of day two, where the path crosses a quiet road through the cedars. The sign points on to the next oji.", "photo": "photos/IMG_2141.jpg", "thumb": "thumbs/IMG_2141.jpg"}, {"id": "IMG_2195", "date": "2026-10-22", "time": "09:08", "lat": 33.821167, "lon": 135.791231, "alt": 65, "title": "Another stamp for the book", "caption": "Inking the next stamp, down in the river valley at the start of day three.", "photo": "photos/IMG_2195.jpg", "thumb": "thumbs/IMG_2195.jpg"}, {"id": "IMG_2210", "date": "2026-10-22", "time": "10:38", "lat": 33.800494, "lon": 135.820328, "alt": 465, "title": "Clear skies from the ridge", "caption": "A lookout over the mountains, a little over an hour into day three.", "photo": "photos/IMG_2210.jpg", "thumb": "thumbs/IMG_2210.jpg"}, {"id": "IMG_2241", "date": "2026-10-22", "time": "14:26", "lat": 33.759342, "lon": 135.840561, "alt": 57, "title": "A cold drink at Koguchi", "caption": "End of the day's walk, back down by the river in the village of Koguchi.", "photo": "photos/IMG_2241.jpg", "thumb": "thumbs/IMG_2241.jpg"}, {"id": "IMG_2275", "date": "2026-10-23", "time": "08:58", "lat": 33.730194, "lon": 135.849394, "alt": 820, "title": "The big climb", "caption": "The highest photo of the trip, 820 m up, early on day four.", "photo": "photos/IMG_2275.jpg", "thumb": "thumbs/IMG_2275.jpg"}, {"id": "IMG_2312", "date": "2026-10-23", "time": "13:19", "lat": 33.670792, "lon": 135.888961, "alt": 317, "title": "Seiganto-ji, Nachi", "caption": "The vermilion pagoda beside Kumano Nachi Taisha, the last of the three grand shrines.", "photo": "photos/IMG_2312.jpg", "thumb": "thumbs/IMG_2312.jpg"}, {"id": "IMG_2334", "date": "2026-10-24", "time": "08:42", "lat": 33.628369, "lon": 135.941406, "alt": 6, "title": "A kite in the rain", "caption": "A black kite on a power pole, back at sea level near Katsuura on the final morning.", "photo": "photos/IMG_2334.jpg", "thumb": "thumbs/IMG_2334.jpg"}];
+const LAND = [[[[136.5692,34.5961],[136.6124,34.5961],[136.634,34.5911],[136.6484,34.5792],[136.6628,34.5657],[136.6772,34.5539],[136.7528,34.5134],[136.796,34.2533],[136.7744,34.2618],[136.7744,34.2736],[136.7888,34.277],[136.7744,34.3074],[136.7564,34.2956],[136.7276,34.2905],[136.7024,34.2956],[136.7096,34.3108],[136.724,34.331],[136.706,34.3344],[136.6772,34.326],[136.6484,34.3141],[136.6664,34.3091],[136.6664,34.2972],[136.6556,34.2854],[136.6232,34.2753],[136.6088,34.2652],[136.5908,34.2635],[136.5728,34.2804],[136.5692,34.2736],[136.5656,34.2719],[136.562,34.2685],[136.562,34.2601],[136.5332,34.2719],[136.5224,34.2736],[136.5188,34.2618],[136.5116,34.2517],[136.5044,34.2466],[136.5152,34.2297],[136.5044,34.2297],[136.472,34.2381],[136.4288,34.2145],[136.418,34.2044],[136.3856,34.2044],[136.3352,34.1841],[136.2992,34.1537],[136.2956,34.125],[136.31,34.1183],[136.3172,34.1149],[136.3208,34.1081],[136.3136,34.0946],[136.31,34.0896],[136.2992,34.0862],[136.292,34.0828],[136.2848,34.0811],[136.274,34.0862],[136.2596,34.1048],[136.2524,34.1081],[136.2452,34.1031],[136.2308,34.0828],[136.22,34.0744],[136.22,34.0676],[136.2344,34.0676],[136.2452,34.0642],[136.2488,34.0558],[136.2524,34.044],[136.2704,34.0288],[136.2812,34.0169],[136.2776,34.0119],[136.274,34.0068],[136.274,33.9798],[136.274,33.9714],[136.2596,33.9663],[136.2488,33.9714],[136.238,33.9832],[136.2308,33.9933],[136.22,33.9815],[136.2056,33.9714],[136.2056,33.9646],[136.2272,33.9612],[136.2344,33.9477],[136.2272,33.9376],[136.2128,33.9443],[136.2056,33.9275],[136.1984,33.9207],[136.166,33.9156],[136.1588,33.9139],[136.1516,33.9055],[136.1444,33.8937],[136.1372,33.8903],[136.1264,33.8903],[136.1048,33.892],[136.0688,33.8464],[136.0184,33.7333],[135.9932,33.686],[135.9896,33.6826],[135.9824,33.6522],[135.9608,33.6421],[135.9572,33.6252],[135.9356,33.6168],[135.9392,33.6032],[135.9608,33.5931],[135.9464,33.5779],[135.914,33.5475],[135.896,33.5425],[135.8852,33.5289],[135.8276,33.5138],[135.8096,33.5053],[135.7988,33.4952],[135.7844,33.4732],[135.7916,33.453],[135.788,33.4411],[135.7736,33.4445],[135.7592,33.4327],[135.7556,33.4513],[135.77,33.4682],[135.7664,33.4817],[135.6692,33.4901],[135.6368,33.4952],[135.4892,33.5408],[135.446,33.5509],[135.41,33.5745],[135.3992,33.583],[135.3884,33.5948],[135.3884,33.6083],[135.392,33.6184],[135.3812,33.637],[135.374,33.6438],[135.3704,33.6455],[135.3596,33.6539],[135.3416,33.6573],[135.3272,33.6708],[135.3416,33.6944],[135.3776,33.6978],[135.4028,33.7012],[135.392,33.713],[135.3416,33.7451],[135.32,33.7535],[135.3128,33.7653],[135.2948,33.7637],[135.266,33.7805],[135.2336,33.7822],[135.23,33.7991],[135.1976,33.8143],[135.1724,33.838],[135.1544,33.8751],[135.1184,33.8937],[135.1004,33.8903],[135.0644,33.8852],[135.0572,33.8802],[135.0608,33.8903],[135.068,33.8971],[135.0572,33.9021],[135.0644,33.9055],[135.0788,33.9055],[135.0788,33.919],[135.068,33.9308],[135.086,33.9426],[135.1004,33.9545],[135.0968,33.9595],[135.0788,33.9595],[135.0752,33.9781],[135.0932,33.9916],[135.1148,33.9933],[135.1292,33.9984],[135.1544,34.0102],[135.1616,34.0254],[135.1616,34.0389],[135.1544,34.049],[135.1328,34.0575],[135.1112,34.0659],[135.0932,34.0676],[135.1148,34.1014],[135.1184,34.1031],[135.1256,34.1064],[135.1292,34.1081],[135.1292,34.1132],[135.1292,34.1216],[135.122,34.1368],[135.1472,34.1385],[135.1868,34.1351],[135.1904,34.1503],[135.1796,34.1655],[135.1652,34.1875],[135.1472,34.1858],[135.1364,34.228],[135.1184,34.2415],[135.0932,34.2601],[135.0608,34.2669],[135.0716,34.2854],[135.104,34.3175],[135.2084,34.3428],[135.2552,34.3766],[135.2804,34.3969],[135.32,34.429],[135.3524,34.4678],[135.374,34.4847],[135.374,34.5083],[135.374,34.5185],[135.392,34.5235],[135.3992,34.5337],[135.41,34.5404],[135.4136,34.5573],[135.4136,34.5792]]]];
+const TOWNS = [
+  {n:"Tanabe",lat:33.728,lon:135.378},
+  {n:"Takijiri",lat:33.781,lon:135.488,anchor:"end"},
+  {n:"Hongū",lat:33.840,lon:135.773},
+  {n:"Koguchi",lat:33.756,lon:135.828,anchor:"end"},
+  {n:"Nachi",lat:33.668,lon:135.876,anchor:"end"},
+  {n:"Katsuura",lat:33.627,lon:135.956}
+];
+
+const NS="http://www.w3.org/2000/svg";
+const LAT0=33.75, KX=Math.cos(LAT0*Math.PI/180)*1000, KY=1000;
+const px=(lon,lat)=>[(lon-135)*KX,(34-lat)*KY];
+const el=(t,a={},p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e;};
+
+const svg=document.getElementById('map');
+const gLand=el('g',{},svg), gRoute=el('g',{},svg), gTowns=el('g',{},svg), gPins=el('g',{},svg);
+
+// coastline
+let d="";
+for(const poly of LAND)for(const ring of poly){
+  d+="M"+ring.map(([lo,la])=>px(lo,la).map(v=>v.toFixed(1)).join(",")).join("L")+"Z";
+}
+const landPath=el('path',{d,fill:"var(--land)",stroke:"var(--coast)","stroke-linejoin":"round","vector-effect":"non-scaling-stroke","stroke-width":1.2},gLand);
+
+// route
+const pts=STOPS.map(s=>px(s.lon,s.lat));
+const route=el('polyline',{points:pts.map(p=>p.join(",")).join(" "),fill:"none",stroke:"var(--cedar)","stroke-width":2,
+  "vector-effect":"non-scaling-stroke","stroke-dasharray":"5 5","stroke-linecap":"round"},gRoute);
+
+// towns
+const townEls=TOWNS.map(t=>{const [x,y]=px(t.lon,t.lat);
+  const g=el('g',{},gTowns);
+  const dot=el('circle',{cx:x,cy:y,fill:"var(--muted)"},g);
+  const tx=el('text',{class:"town","text-anchor":t.anchor||"start"},g);tx.textContent=t.n;
+  return {t,x,y,dot,tx};});
+const seaT=el('text',{class:"sea-label","text-anchor":"middle"},gTowns);seaT.textContent="PACIFIC OCEAN";
+const seaXY=px(135.55,33.5);
+
+// pins
+const halo=el('circle',{class:"halo"},gPins);
+const pinEls=STOPS.map((s,i)=>{const [x,y]=pts[i];
+  const g=el('g',{class:"pin",tabindex:"0",role:"button","aria-label":`Photo ${i+1}: ${s.title}`},gPins);
+  const c=el('circle',{cx:x,cy:y},g);const t=el('text',{x,y},g);t.textContent=i+1;
+  g.addEventListener('click',()=>select(i,true));
+  g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(i,true);}});
+  return {g,c,t,x,y};});
+
+// view state
+let vb={x:0,y:0,w:100,h:100};
+function size(){const r=svg.getBoundingClientRect();return {W:Math.max(r.width,1),H:Math.max(r.height,1)};}
+function fitView(){
+  const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
+  const minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);
+  const {W,H}=size();const padX=(maxx-minx)*.14+12,padY=(maxy-miny)*.22+12;
+  let w=maxx-minx+padX*2,h=maxy-miny+padY*2;
+  if(w/h<W/H)w=h*W/H;else h=w*H/W;
+  return {x:(minx+maxx)/2-w/2,y:(miny+maxy)/2-h/2,w,h};
+}
+let FIT;
+function apply(){
+  svg.setAttribute('viewBox',`${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  const {W}=size();const s=vb.w/W;
+  pinEls.forEach(p=>{p.c.setAttribute('r',11*s);p.c.setAttribute('stroke-width',1.6*s);p.t.setAttribute('font-size',11*s);});
+  halo.setAttribute('r',22*s);
+  townEls.forEach(o=>{o.dot.setAttribute('r',2.2*s);o.tx.setAttribute('font-size',10.5*s);
+    const dx=(o.t.anchor==='end'?-7:7)*s;o.tx.setAttribute('x',o.x+dx);o.tx.setAttribute('y',o.y-6*s);});
+  seaT.setAttribute('x',seaXY[0]);seaT.setAttribute('y',seaXY[1]);seaT.setAttribute('font-size',13*s);
+}
+function setView(n,animate){
+  if(!animate||matchMedia('(prefers-reduced-motion: reduce)').matches){vb=n;apply();return;}
+  const a={...vb},t0=performance.now(),D=450;
+  cancelAnimationFrame(setView.raf);
+  const step=t=>{const k=Math.min(1,(t-t0)/D),e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+    vb={x:a.x+(n.x-a.x)*e,y:a.y+(n.y-a.y)*e,w:a.w+(n.w-a.w)*e,h:a.h+(n.h-a.h)*e};apply();
+    if(k<1)setView.raf=requestAnimationFrame(step);};
+  setView.raf=requestAnimationFrame(step);
+}
+function zoomAt(f,cx,cy){
+  const minW=FIT.w/14,maxW=FIT.w*2.2;
+  const w=Math.min(maxW,Math.max(minW,vb.w*f));const k=w/vb.w;
+  vb={x:cx-(cx-vb.x)*k,y:cy-(cy-vb.y)*k,w,h:vb.h*k};apply();
+}
+function toMap(clientX,clientY){const r=svg.getBoundingClientRect();
+  return [vb.x+(clientX-r.left)/r.width*vb.w, vb.y+(clientY-r.top)/r.height*vb.h];}
+
+svg.addEventListener('wheel',e=>{e.preventDefault();const [mx,my]=toMap(e.clientX,e.clientY);zoomAt(Math.exp(e.deltaY*.0015),mx,my);},{passive:false});
+const ptrs=new Map();let pinch=null,moved=0;
+svg.addEventListener('pointerdown',e=>{ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=0;
+  if(ptrs.size===2){const [a,b]=[...ptrs.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y)};}});
+svg.addEventListener('pointermove',e=>{
+  if(!ptrs.has(e.pointerId))return;const prev=ptrs.get(e.pointerId);const cur={x:e.clientX,y:e.clientY};
+  if(ptrs.size===1){const dx=cur.x-prev.x,dy=cur.y-prev.y;moved+=Math.abs(dx)+Math.abs(dy);
+    if(moved>4){if(!svg.hasPointerCapture(e.pointerId))svg.setPointerCapture(e.pointerId);svg.classList.add('dragging');}
+    const r=svg.getBoundingClientRect();vb.x-=dx*vb.w/r.width;vb.y-=dy*vb.h/r.height;apply();}
+  ptrs.set(e.pointerId,cur);
+  if(ptrs.size===2&&pinch){const [a,b]=[...ptrs.values()];const d2=Math.hypot(a.x-b.x,a.y-b.y);
+    const [mx,my]=toMap((a.x+b.x)/2,(a.y+b.y)/2);zoomAt(pinch.d/d2,mx,my);pinch.d=d2;moved=99;}
+});
+const up=e=>{ptrs.delete(e.pointerId);if(ptrs.size<2)pinch=null;svg.classList.remove('dragging');};
+svg.addEventListener('pointerup',up);svg.addEventListener('pointercancel',up);
+document.getElementById('zin').onclick=()=>zoomAt(1/1.6,vb.x+vb.w/2,vb.y+vb.h/2);
+document.getElementById('zout').onclick=()=>zoomAt(1.6,vb.x+vb.w/2,vb.y+vb.h/2);
+document.getElementById('zall').onclick=()=>setView(FIT,true);
+
+// panel
+const $=id=>document.getElementById(id);
+const DAYNAMES=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const firstDay=STOPS[0].date;
+function dayNum(s){return Math.round((Date.UTC(...s.date.split('-').map((v,i)=>i===1?v-1:+v))-Date.UTC(...firstDay.split('-').map((v,i)=>i===1?v-1:+v)))/864e5)+1;}
+function whenText(s){const [y,m,d]=s.date.split('-').map(Number);const wd=new Date(Date.UTC(y,m-1,d)).getUTCDay();
+  return `Day ${dayNum(s)} · ${DAYNAMES[wd]} ${d} ${MON[m-1]} · ${s.time}`;}
+
+const strip=$('strip');
+const thumbEls=STOPS.map((s,i)=>{const b=document.createElement('button');b.className='thumb';b.setAttribute('aria-label',`Photo ${i+1}: ${s.title}`);
+  const im=document.createElement('img');im.src=s.thumb;im.alt="";im.loading="lazy";b.appendChild(im);b.onclick=()=>select(i,true);strip.appendChild(b);return b;});
+
+// profile chart
+const prof=$('profile');const PW=380,PH=120,PL=34,PR=8,PT=8,PB=22;
+const tms=STOPS.map(s=>Date.parse(`${s.date}T${s.time}:00+09:00`));
+const t0=Date.parse(`${firstDay}T00:00:00+09:00`),days=dayNum(STOPS[STOPS.length-1]),t1=t0+days*864e5;
+const xs=t=>PL+(t-t0)/(t1-t0)*(PW-PL-PR), ymax=900, ys=a=>PT+(1-a/ymax)*(PH-PT-PB);
+for(const v of [0,400,800]){el('line',{x1:PL,x2:PW-PR,y1:ys(v),y2:ys(v),stroke:"var(--rule)","stroke-width":1},prof);
+  const t=el('text',{x:PL-6,y:ys(v),"text-anchor":"end","dominant-baseline":"central","font-size":9.5,fill:"var(--muted)","font-family":"var(--body)"},prof);t.textContent=v+" m";}
+for(let k=0;k<days;k++){const x0=xs(t0+k*864e5),x1=xs(t0+(k+1)*864e5);
+  if(k>0)el('line',{x1:x0,x2:x0,y1:PT,y2:PH-PB,stroke:"var(--rule)","stroke-width":1,"stroke-dasharray":"2 3"},prof);
+  const t=el('text',{x:(x0+x1)/2,y:PH-6,"text-anchor":"middle","font-size":9.5,fill:"var(--muted)","font-family":"var(--body)"},prof);t.textContent="Day "+(k+1);}
+const ppts=STOPS.map((s,i)=>[xs(tms[i]),ys(s.alt)]);
+el('path',{d:`M${ppts[0][0]},${ys(0)}L${ppts.map(p=>p.join(",")).join("L")}L${ppts[ppts.length-1][0]},${ys(0)}Z`,fill:"var(--cedar)","fill-opacity":.12},prof);
+el('polyline',{points:ppts.map(p=>p.join(",")).join(" "),fill:"none",stroke:"var(--cedar)","stroke-width":1.5},prof);
+const profDots=ppts.map((p,i)=>{const c=el('circle',{cx:p[0],cy:p[1],r:4,fill:"var(--land)",stroke:"var(--cedar)","stroke-width":1.5,style:"cursor:pointer"},prof);
+  c.addEventListener('click',()=>select(i,true));const tt=el('title',{},c);tt.textContent=`${i+1}. ${STOPS[i].title} (${STOPS[i].alt} m)`;return c;});
+
+let cur=0;
+function select(i,fly){
+  cur=i;const s=STOPS[i];
+  $('photoImg').src=s.photo;$('photoImg').alt=s.title;
+  $('when').textContent=whenText(s);$('title').textContent=s.title;$('caption').textContent=s.caption;
+  $('alt').textContent=`${s.alt} m above sea level`;
+  $('coords').textContent=`${s.lat.toFixed(4)}° N, ${s.lon.toFixed(4)}° E`;
+  $('count').textContent=`${i+1} of ${STOPS.length}`;
+  $('prev').disabled=i===0;$('next').disabled=i===STOPS.length-1;
+  pinEls.forEach((p,k)=>p.g.classList.toggle('active',k===i));
+  gPins.appendChild(pinEls[i].g);
+  halo.setAttribute('cx',pinEls[i].x);halo.setAttribute('cy',pinEls[i].y);
+  thumbEls.forEach((b,k)=>b.setAttribute('aria-current',k===i?"true":"false"));
+  thumbEls[i].scrollIntoView({block:"nearest",inline:"nearest"});
+  profDots.forEach((c,k)=>{c.setAttribute('fill',k===i?"var(--shu)":"var(--land)");c.setAttribute('stroke',k===i?"var(--shu)":"var(--cedar)");c.setAttribute('r',k===i?5:4);});
+  if(fly){const p=pinEls[i];
+    const inside=p.x>vb.x+vb.w*.15&&p.x<vb.x+vb.w*.85&&p.y>vb.y+vb.h*.15&&p.y<vb.y+vb.h*.85;
+    if(!inside)setView({x:p.x-vb.w/2,y:p.y-vb.h/2,w:vb.w,h:vb.h},true);}
+  // preload neighbours
+  [i-1,i+1].forEach(k=>{if(STOPS[k]){const im=new Image();im.src=STOPS[k].photo;}});
+}
+$('prev').onclick=()=>cur>0&&select(cur-1,true);
+$('next').onclick=()=>cur<STOPS.length-1&&select(cur+1,true);
+document.addEventListener('keydown',e=>{if(!$('lightbox').hidden){if(e.key==='Escape')$('lightbox').hidden=true;return;}
+  if(e.target.closest&&e.target.closest('input,textarea'))return;
+  if(e.key==='ArrowRight')$('next').click();if(e.key==='ArrowLeft')$('prev').click();});
+const openLb=()=>{$('lbImg').src=STOPS[cur].photo;$('lbImg').alt=STOPS[cur].title;$('lightbox').hidden=false;};
+$('photo').onclick=openLb;$('photo').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openLb();}};
+$('lightbox').onclick=()=>{$('lightbox').hidden=true;};
+
+function init(){FIT=fitView();vb={...FIT};apply();}
+init();select(0,false);
+let rt;new ResizeObserver(()=>{clearTimeout(rt);rt=setTimeout(()=>{const old=FIT;FIT=fitView();
+  const {W,H}=size();const cx=vb.x+vb.w/2,cy=vb.y+vb.h/2;const h=vb.w*H/W;vb={x:cx-vb.w/2,y:cy-h/2,w:vb.w,h};apply();},60);}).observe(svg);
+</script>
+
+</body>
+</html>
