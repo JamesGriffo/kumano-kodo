@@ -46,6 +46,11 @@ body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:
 
 header h1{font-family:var(--display);font-weight:700;font-size:1.75rem;line-height:1.15;margin:0;text-wrap:balance}
 header p{margin:6px 0 0;color:var(--muted);font-size:.9rem}
+.replay{display:inline-flex;align-items:center;gap:8px;margin-top:12px;padding:8px 16px 8px 12px;border-radius:999px;background:var(--shu);color:#fff;
+  text-decoration:none;font-weight:700;font-size:.9rem}
+.replay svg{width:14px;height:14px;fill:#fff}
+.replay:hover{filter:brightness(1.08)}
+.replay:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 
 .stop{display:flex;flex-direction:column;gap:12px}
 .photo{position:relative;margin:0;border-radius:6px;overflow:hidden;background:var(--land);border:1px solid var(--rule);cursor:zoom-in}
@@ -131,6 +136,7 @@ button:focus-visible,.thumb:focus-visible,.photo:focus-visible{outline:2px solid
     <header>
       <h1>Kumano Kodo</h1>
       <p id="subtitle"></p>
+      <a class="replay" href="replay.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>Replay the walk in 3D</a>
     </header>
 
     <nav class="days" id="days" aria-label="Jump to a day"></nav>
@@ -351,7 +357,10 @@ $('photo').onclick=openLb;$('photo').onkeydown=e=>{if(e.key==='Enter'||e.key==='
 $('lightbox').onclick=()=>{$('lightbox').hidden=true;};
 
 function init(){FIT=fitView();vb={...FIT};apply();}
-init();select(0,false);
+init();
+{let h="";try{h=decodeURIComponent(location.hash.slice(1));}catch(e){}
+ const hi=STOPS.findIndex(s=>s.id===h);
+ if(hi>=0){select(hi,false);fitTo([hi],false);}else select(0,false);}
 let rt;new ResizeObserver(()=>{clearTimeout(rt);rt=setTimeout(()=>{const old=FIT;FIT=fitView();
   const {W,H}=size();const cx=vb.x+vb.w/2,cy=vb.y+vb.h/2;const h=vb.w*H/W;vb={x:cx-vb.w/2,y:cy-h/2,w:vb.w,h};apply();},60);}).observe(svg);
 </script>

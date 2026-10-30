@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Kumano Kodo Replay</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: full-screen 3D map; HUD top-left, controls along the bottom with a height profile that doubles as the scrubber.
+   One deliberate dark look: the chrome sits over satellite imagery, so it stays dark in both OS themes. */
+:root{
+  --glass:rgba(14,20,17,.74); --glass-strong:rgba(14,20,17,.88); --line:rgba(255,255,255,.16);
+  --ink:#F1F4EF; --muted:#B3BFB7; --shu:#E8664E;
+  --display:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",Georgia,serif;
+  --body:"Zen Kaku Gothic New","Hiragino Sans","Segoe UI",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:#0E1411;color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;overflow:hidden;-webkit-font-smoothing:antialiased}
+#map{position:fixed;inset:0}
+[hidden]{display:none!important}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--shu);outline-offset:2px}
+
+.glass{background:var(--glass);border:1px solid var(--line);border-radius:10px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.hud{position:fixed;z-index:3;left:calc(12px + env(safe-area-inset-left,0px));top:calc(12px + env(safe-area-inset-top,0px));
+  max-width:min(460px,calc(100vw - 120px));padding:10px 14px}
+.hud .day{font-family:var(--display);font-weight:700;font-size:1.2rem;line-height:1.25;text-wrap:balance}
+.hud .sub{color:var(--muted);font-size:.85rem;margin-top:2px;font-variant-numeric:tabular-nums}
+.back{position:fixed;z-index:3;right:calc(12px + env(safe-area-inset-right,0px));top:calc(12px + env(safe-area-inset-top,0px));
+  padding:8px 14px;border-radius:999px;color:var(--ink);text-decoration:none;font-weight:500;font-size:.9rem}
+.back:hover{border-color:rgba(255,255,255,.4)}
+.maplibregl-ctrl-top-right{top:calc(52px + env(safe-area-inset-top,0px));right:env(safe-area-inset-right,0px)}
+
+.bar{position:fixed;z-index:3;left:0;right:0;bottom:0;display:flex;align-items:center;gap:12px;
+  padding:28px max(12px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));
+  background:linear-gradient(to bottom,rgba(10,14,12,0),rgba(10,14,12,.78) 45%)}
+.play{flex:0 0 auto;width:52px;height:52px;border-radius:50%;border:0;background:var(--shu);color:#fff;cursor:pointer;
+  display:grid;place-items:center;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.play svg{width:22px;height:22px;fill:#fff}
+.track{flex:1;min-width:0;position:relative;height:62px;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
+.track svg{position:absolute;left:0;right:0;top:0;width:100%;height:44px;overflow:visible}
+.daylabels{position:absolute;left:0;right:0;bottom:0;height:16px;font-size:.7rem;color:var(--muted);letter-spacing:.04em;pointer-events:none}
+.daylabels span{position:absolute;top:0;padding-left:4px;white-space:nowrap}
+.speed{flex:0 0 auto;min-width:46px;height:34px;border-radius:999px;border:1px solid var(--line);background:var(--glass);cursor:pointer;
+  font-weight:700;font-size:.85rem;font-variant-numeric:tabular-nums}
+
+.card{position:fixed;z-index:3;right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(98px + env(safe-area-inset-bottom,0px));
+  display:flex;gap:12px;align-items:center;width:min(360px,calc(100vw - 24px));padding:8px;border-radius:12px;
+  background:var(--glass-strong);border:1px solid var(--line);color:var(--ink);text-decoration:none;
+  opacity:0;transform:translateY(8px);transition:opacity .35s,transform .35s;pointer-events:none}
+.card.show{opacity:1;transform:none;pointer-events:auto}
+.card img{width:84px;height:84px;object-fit:cover;border-radius:8px;flex:0 0 auto;background:#222}
+.card .cmeta{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-variant-numeric:tabular-nums}
+.card .ctitle{font-family:var(--display);font-weight:700;font-size:1.05rem;line-height:1.25;margin-top:2px}
+.card .clink{font-size:.78rem;color:var(--muted);margin-top:4px}
+.card:hover .clink{color:var(--ink)}
+
+.titlecard{position:fixed;z-index:2;left:50%;top:27%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;
+  opacity:0;transition:opacity .6s;width:min(90vw,700px);text-shadow:0 2px 18px rgba(0,0,0,.7),0 1px 3px rgba(0,0,0,.6)}
+.titlecard.show{opacity:1}
+.titlecard .n{font-size:.8rem;letter-spacing:.24em;text-transform:uppercase;font-weight:700}
+.titlecard .t{font-family:var(--display);font-weight:700;font-size:clamp(1.8rem,6vw,3.2rem);line-height:1.15;margin-top:4px;text-wrap:balance}
+
+.start{position:fixed;z-index:4;left:50%;top:46%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;width:min(90vw,420px)}
+.start button{display:inline-flex;align-items:center;gap:10px;padding:14px 26px;border-radius:999px;border:0;background:var(--shu);color:#fff;
+  font-weight:700;font-size:1.1rem;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+.start button:disabled{opacity:.6;cursor:progress}
+.start button svg{width:18px;height:18px;fill:#fff}
+.start p{margin:0;padding:6px 12px;border-radius:8px;font-size:.85rem;color:var(--ink)}
+.msg{position:fixed;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:var(--muted)}
+
+@media (max-width:600px){
+  .hud{padding:8px 12px}
+  .hud .day{font-size:1.02rem}
+  .card img{width:64px;height:64px}
+  .card .ctitle{font-size:.98rem}
+  .bar{gap:10px}
+  .play{width:46px;height:46px}
+}
+@media (prefers-reduced-motion:reduce){.card,.titlecard{transition:none}}
+</style>
+</head>
+<body>
+<div id="map" aria-label="3D map of the walk"></div>
+
+<div class="hud glass" aria-live="polite">
+  <div class="day" id="hudDay">Kumano Kodo</div>
+  <div class="sub" id="hudSub">Tanabe to Katsuura on foot</div>
+</div>
+<a class="back glass" href="index.html">← Photo map</a>
+
+<div class="titlecard" id="titlecard" aria-hidden="true"><div class="n" id="tcN"></div><div class="t" id="tcT"></div></div>
+
+<a class="card" id="card" href="index.html">
+  <img id="cardImg" alt="">
+  <div><div class="cmeta" id="cardMeta"></div><div class="ctitle" id="cardTitle"></div><div class="clink">Open on the photo map →</div></div>
+</a>
+
+<div class="start" id="start">
+  <button id="startBtn" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg><span id="startLabel">Loading map…</span></button>
+  <p class="glass" id="startHint"></p>
+</div>
+
+<div class="bar">
+  <button class="play" id="play" aria-label="Play"><svg viewBox="0 0 24 24" id="playIcon" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg></button>
+  <div class="track" id="track" tabindex="0" role="slider" aria-label="Replay position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <svg id="prof" viewBox="0 0 1000 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+    <div class="daylabels" id="daylabels"></div>
+  </div>
+  <button class="speed" id="speed" aria-label="Playback speed">1×</button>
+</div>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script>
+(function(){
+const STOPS = [{"id": "IMG_2018", "date": "2026-10-19", "time": "14:47", "title": "Arriving in Tanabe", "caption": "Wheeling the bags from the station into town the afternoon before the walk.", "lat": 33.733425, "lon": 135.383392, "alt": 8, "photo": "photos/IMG_2018.jpg", "thumb": "thumbs/IMG_2018.jpg"}, {"id": "IMG_2021", "date": "2026-10-19", "time": "15:41", "title": "Checking in", "caption": "Gathering at the front desk, with a big map of the peninsula on the wall.", "lat": 33.732739, "lon": 135.384139, "alt": 9, "photo": "photos/IMG_2021.jpg", "thumb": "thumbs/IMG_2021.jpg"}, {"id": "IMG_2026", "date": "2026-10-19", "time": "16:21", "title": "Supply run", "caption": "Stocking up at the shops in Tanabe.", "lat": 33.728592, "lon": 135.389406, "alt": 26, "photo": "photos/IMG_2026.jpg", "thumb": "thumbs/IMG_2026.jpg"}, {"id": "IMG_2037", "date": "2026-10-19", "time": "17:40", "title": "First dinner together", "caption": "Drinks and plates on the table at a Tanabe izakaya.", "lat": 33.733458, "lon": 135.382081, "alt": 9, "photo": "photos/IMG_2037.jpg", "thumb": "thumbs/IMG_2037.jpg"}, {"id": "IMG_2038", "date": "2026-10-19", "time": "20:01", "title": "Umbrellas out", "caption": "Heading out into a wet evening in Tanabe.", "lat": 33.733883, "lon": 135.381639, "alt": 9, "photo": "photos/IMG_2038.jpg", "thumb": "thumbs/IMG_2038.jpg"}, {"id": "IMG_2040", "date": "2026-10-19", "time": "20:01", "title": "Rainy night in Tanabe", "caption": "Clear umbrellas all round.", "lat": 33.733792, "lon": 135.381622, "alt": 6, "photo": "photos/IMG_2040.jpg", "thumb": "thumbs/IMG_2040.jpg"}, {"id": "IMG_2041", "date": "2026-10-19", "time": "20:01", "title": "The whole crew", "caption": "Everyone squeezed in under the umbrellas for a group shot.", "lat": 33.733753, "lon": 135.381547, "alt": 9, "photo": "photos/IMG_2041.jpg", "thumb": "thumbs/IMG_2041.jpg"}, {"id": "IMG_2052", "date": "2026-10-20", "time": "09:37", "lat": 33.774525, "lon": 135.502778, "alt": 94, "title": "Setting off from Takijiri", "caption": "The whole group at the start of the walk. Rain jackets on and the river running high and brown.", "photo": "photos/IMG_2052.jpg", "thumb": "thumbs/IMG_2052.jpg"}, {"id": "IMG_2056", "date": "2026-10-20", "time": "10:02", "title": "Takijiri-oji", "caption": "Ponchos on at the shrine that marks the official start of the Nakahechi trail.", "lat": 33.775406, "lon": 135.503586, "alt": 100, "photo": "photos/IMG_2056.jpg", "thumb": "thumbs/IMG_2056.jpg"}, {"id": "IMG_2061", "date": "2026-10-20", "time": "10:25", "title": "The stamp sheet begins", "caption": "The first stamps of the walk on the pilgrim's card.", "lat": 33.776931, "lon": 135.506133, "alt": 207, "photo": "photos/IMG_2061.jpg", "thumb": "thumbs/IMG_2061.jpg"}, {"id": "IMG_2062", "date": "2026-10-20", "time": "10:52", "title": "Up into the cedars", "caption": "Reading one of the information boards on the steep climb out of Takijiri.", "lat": 33.778839, "lon": 135.512161, "alt": 389, "photo": "photos/IMG_2062.jpg", "thumb": "thumbs/IMG_2062.jpg"}, {"id": "IMG_2063", "date": "2026-10-20", "time": "11:58", "title": "Into Takahara", "caption": "Out of the forest and along a lane through the hillside village.", "lat": 33.793533, "lon": 135.5262, "alt": 338, "photo": "photos/IMG_2063.jpg", "thumb": "thumbs/IMG_2063.jpg"}, {"id": "IMG_2067", "date": "2026-10-20", "time": "11:59", "title": "Takahara views", "caption": "Cloud sitting on the mountains above the village's vegetable gardens.", "lat": 33.793869, "lon": 135.526961, "alt": 339, "photo": "photos/IMG_2067.jpg", "thumb": "thumbs/IMG_2067.jpg"}, {"id": "IMG_2069", "date": "2026-10-20", "time": "12:58", "title": "Another stamp", "caption": "Each oji along the trail has its own design.", "lat": 33.797297, "lon": 135.547011, "alt": 587, "photo": "photos/IMG_2069.jpg", "thumb": "thumbs/IMG_2069.jpg"}, {"id": "IMG_2070", "date": "2026-10-20", "time": "12:58", "title": "Stamp box in the forest", "caption": "A small roofed box holds the stamp and ink pad.", "lat": 33.797356, "lon": 135.547089, "alt": 588, "photo": "photos/IMG_2070.jpg", "thumb": "thumbs/IMG_2070.jpg"}, {"id": "IMG_2073", "date": "2026-10-20", "time": "14:03", "title": "Fungus on the forest floor", "caption": "A bright orange find among the leaf litter.", "lat": 33.801419, "lon": 135.561294, "alt": 653, "photo": "photos/IMG_2073.jpg", "thumb": "thumbs/IMG_2073.jpg"}, {"id": "IMG_2075", "date": "2026-10-20", "time": "14:07", "title": "Marker post 15", "caption": "Numbered posts along the Nakahechi count the distance every 500 metres.", "lat": 33.802219, "lon": 135.564103, "alt": 697, "photo": "photos/IMG_2075.jpg", "thumb": "thumbs/IMG_2075.jpg"}, {"id": "IMG_2076", "date": "2026-10-20", "time": "14:09", "title": "Another oji site", "caption": "An information board where a wayside shrine once stood.", "lat": 33.802353, "lon": 135.564208, "alt": 687, "photo": "photos/IMG_2076.jpg", "thumb": "thumbs/IMG_2076.jpg"}, {"id": "IMG_2077", "date": "2026-10-20", "time": "14:25", "title": "Stone waymarker", "caption": "An old carved pillar beside the path.", "lat": 33.802006, "lon": 135.568297, "alt": 789, "photo": "photos/IMG_2077.jpg", "thumb": "thumbs/IMG_2077.jpg"}, {"id": "IMG_2078", "date": "2026-10-20", "time": "14:26", "title": "Coins for luck", "caption": "Small offerings left on the stones by passing walkers.", "lat": 33.801994, "lon": 135.568297, "alt": 790, "photo": "photos/IMG_2078.jpg", "thumb": "thumbs/IMG_2078.jpg"}, {"id": "IMG_2080", "date": "2026-10-20", "time": "14:48", "title": "Into the mist", "caption": "A Kumano Kodo signpost in the cloud forest, close to the day's high point.", "lat": 33.804814, "lon": 135.570267, "alt": 697, "photo": "photos/IMG_2080.jpg", "thumb": "thumbs/IMG_2080.jpg"}, {"id": "IMG_2081", "date": "2026-10-20", "time": "14:48", "title": "Misty forest", "caption": "Mixed forest along the ridge.", "lat": 33.804808, "lon": 135.570267, "alt": 699, "photo": "photos/IMG_2081.jpg", "thumb": "thumbs/IMG_2081.jpg"}, {"id": "IMG_2082", "date": "2026-10-20", "time": "14:48", "title": "Ridge path", "caption": "The trail running on through the mist.", "lat": 33.804808, "lon": 135.570267, "alt": 698, "photo": "photos/IMG_2082.jpg", "thumb": "thumbs/IMG_2082.jpg"}, {"id": "IMG_2083", "date": "2026-10-20", "time": "14:53", "title": "Ichirizuka stone", "caption": "An old distance stone. These marked each ri, about 4 km, of the pilgrim road. Coins are piled at its base.", "lat": 33.807042, "lon": 135.57245, "alt": 666, "photo": "photos/IMG_2083.jpg", "thumb": "thumbs/IMG_2083.jpg"}, {"id": "IMG_2084", "date": "2026-10-20", "time": "15:02", "title": "Reading the history", "caption": "Another board telling the story of this stretch of the trail.", "lat": 33.808303, "lon": 135.576369, "alt": 692, "photo": "photos/IMG_2084.jpg", "thumb": "thumbs/IMG_2084.jpg"}, {"id": "IMG_2086", "date": "2026-10-20", "time": "15:11", "title": "Marker post 19", "caption": "Stones balanced on top by earlier walkers.", "lat": 33.811286, "lon": 135.580581, "alt": 610, "photo": "photos/IMG_2086.jpg", "thumb": "thumbs/IMG_2086.jpg"}, {"id": "IMG_2087", "date": "2026-10-20", "time": "15:16", "title": "Information board", "caption": "Background on the route, deep in the forest.", "lat": 33.813244, "lon": 135.583375, "alt": 587, "photo": "photos/IMG_2087.jpg", "thumb": "thumbs/IMG_2087.jpg"}, {"id": "IMG_2089", "date": "2026-10-20", "time": "15:17", "title": "Which way?", "caption": "A signpost at a junction on the way down towards Chikatsuyu.", "lat": 33.813306, "lon": 135.583389, "alt": 588, "photo": "photos/IMG_2089.jpg", "thumb": "thumbs/IMG_2089.jpg"}, {"id": "IMG_2094", "date": "2026-10-20", "time": "15:36", "title": "Osakamoto-oji site", "caption": "The marker for the old shrine site.", "lat": 33.814367, "lon": 135.588364, "alt": 412, "photo": "photos/IMG_2094.jpg", "thumb": "thumbs/IMG_2094.jpg"}, {"id": "IMG_2095", "date": "2026-10-20", "time": "15:36", "title": "The Osakamoto-oji stamp", "caption": "Stamp in hand, ready for the card.", "lat": 33.814525, "lon": 135.588547, "alt": 416, "photo": "photos/IMG_2095.jpg", "thumb": "thumbs/IMG_2095.jpg"}, {"id": "IMG_2096", "date": "2026-10-20", "time": "15:37", "lat": 33.814742, "lon": 135.588592, "alt": 415, "title": "Osakamoto-oji stamp box", "caption": "One of the small wayside shrines, called oji, that line the route. Each has a stamp to collect on your pilgrim's card.", "photo": "photos/IMG_2096.jpg", "thumb": "thumbs/IMG_2096.jpg"}, {"id": "IMG_2097", "date": "2026-10-20", "time": "15:37", "title": "Stone lantern", "caption": "A moss-covered lantern by the path.", "lat": 33.814656, "lon": 135.5885, "alt": 411, "photo": "photos/IMG_2097.jpg", "thumb": "thumbs/IMG_2097.jpg"}, {"id": "IMG_2098", "date": "2026-10-20", "time": "15:37", "title": "Rocky descent", "caption": "Roots and wet stone on the way down.", "lat": 33.814644, "lon": 135.588486, "alt": 412, "photo": "photos/IMG_2098.jpg", "thumb": "thumbs/IMG_2098.jpg"}, {"id": "IMG_2101", "date": "2026-10-20", "time": "15:52", "title": "Down to the road", "caption": "Out of the forest and onto the main road through the valley.", "lat": 33.812367, "lon": 135.59485, "alt": 344, "photo": "photos/IMG_2101.jpg", "thumb": "thumbs/IMG_2101.jpg"}, {"id": "IMG_2104", "date": "2026-10-20", "time": "15:56", "title": "Back up the steps", "caption": "The trail leaves the road again, up a short flight of stone steps.", "lat": 33.8124, "lon": 135.594833, "alt": 342, "photo": "photos/IMG_2104.jpg", "thumb": "thumbs/IMG_2104.jpg"}, {"id": "IMG_2108", "date": "2026-10-20", "time": "16:00", "title": "Quiet lane", "caption": "Walking a narrow road through the cedars.", "lat": 33.812225, "lon": 135.596375, "alt": 374, "photo": "photos/IMG_2108.jpg", "thumb": "thumbs/IMG_2108.jpg"}, {"id": "IMG_2111", "date": "2026-10-20", "time": "16:09", "title": "Ichirizuka site", "caption": "The place where another distance mound once stood.", "lat": 33.811242, "lon": 135.600328, "alt": 390, "photo": "photos/IMG_2111.jpg", "thumb": "thumbs/IMG_2111.jpg"}, {"id": "IMG_2114", "date": "2026-10-20", "time": "16:14", "title": "Nearly there", "caption": "A wet path with a view of the hills around Chikatsuyu.", "lat": 33.811322, "lon": 135.602586, "alt": 369, "photo": "photos/IMG_2114.jpg", "thumb": "thumbs/IMG_2114.jpg"}, {"id": "IMG_2118", "date": "2026-10-20", "time": "16:21", "title": "Welcome to Chikatsuyu", "caption": "The sign at the end of the first day's walk, outside the guesthouse.", "lat": 33.813494, "lon": 135.603439, "alt": 303, "photo": "photos/IMG_2118.jpg", "thumb": "thumbs/IMG_2118.jpg"}, {"id": "IMG_2127", "date": "2026-10-21", "time": "07:29", "title": "Saying goodbye", "caption": "A morning photo with our hosts before setting off from Chikatsuyu.", "lat": 33.8143, "lon": 135.60875, "alt": 303, "photo": "photos/IMG_2127.jpg", "thumb": "thumbs/IMG_2127.jpg"}, {"id": "IMG_2129", "date": "2026-10-21", "time": "08:10", "title": "Tsugizakura-oji", "caption": "Stone steps and a torii under the giant cedars.", "lat": 33.828156, "lon": 135.634186, "alt": 513, "photo": "photos/IMG_2129.jpg", "thumb": "thumbs/IMG_2129.jpg"}, {"id": "IMG_2134", "date": "2026-10-21", "time": "08:23", "title": "Sun breaking through", "caption": "Mist lifting off the mountains in the early morning.", "lat": 33.831761, "lon": 135.644058, "alt": 495, "photo": "photos/IMG_2134.jpg", "thumb": "thumbs/IMG_2134.jpg"}, {"id": "IMG_2136", "date": "2026-10-21", "time": "08:56", "title": "Wayside Jizo", "caption": "A small stone figure in its shrine, with fresh flowers.", "lat": 33.836467, "lon": 135.659272, "alt": 521, "photo": "photos/IMG_2136.jpg", "thumb": "thumbs/IMG_2136.jpg"}, {"id": "IMG_2137", "date": "2026-10-21", "time": "08:58", "title": "Old graves", "caption": "Weathered gravestones lining the path.", "lat": 33.836011, "lon": 135.659547, "alt": 523, "photo": "photos/IMG_2137.jpg", "thumb": "thumbs/IMG_2137.jpg"}, {"id": "IMG_2141", "date": "2026-10-21", "time": "09:22", "lat": 33.838722, "lon": 135.667708, "alt": 496, "title": "Back on the trail", "caption": "Where the path crosses a quiet road through the cedars. The sign points on to the next oji.", "photo": "photos/IMG_2141.jpg", "thumb": "thumbs/IMG_2141.jpg"}, {"id": "IMG_2144", "date": "2026-10-21", "time": "10:22", "title": "A leaf on the path", "caption": "A small detail from the morning's walk.", "lat": 33.847706, "lon": 135.685517, "alt": 451, "photo": "photos/IMG_2144.jpg", "thumb": "thumbs/IMG_2144.jpg"}, {"id": "IMG_2148", "date": "2026-10-21", "time": "10:39", "title": "Stamp with a seated figure", "caption": "Another oji, another stamp.", "lat": 33.843467, "lon": 135.688386, "alt": 410, "photo": "photos/IMG_2148.jpg", "thumb": "thumbs/IMG_2148.jpg"}, {"id": "IMG_2150", "date": "2026-10-21", "time": "10:42", "title": "Information board", "caption": "A board among tall, straight cedars.", "lat": 33.843914, "lon": 135.689742, "alt": 400, "photo": "photos/IMG_2150.jpg", "thumb": "thumbs/IMG_2150.jpg"}, {"id": "IMG_2151", "date": "2026-10-21", "time": "10:47", "title": "And another stamp", "caption": "The card is filling up.", "lat": 33.844569, "lon": 135.692031, "alt": 415, "photo": "photos/IMG_2151.jpg", "thumb": "thumbs/IMG_2151.jpg"}, {"id": "IMG_2152", "date": "2026-10-21", "time": "11:45", "title": "Forest clearing", "caption": "An information board on a sunlit slope.", "lat": 33.853089, "lon": 135.703169, "alt": 353, "photo": "photos/IMG_2152.jpg", "thumb": "thumbs/IMG_2152.jpg"}, {"id": "IMG_2154", "date": "2026-10-21", "time": "11:53", "title": "Mossy stone wall", "caption": "Old stonework holding up the path among the cedars.", "lat": 33.855144, "lon": 135.706908, "alt": 330, "photo": "photos/IMG_2154.jpg", "thumb": "thumbs/IMG_2154.jpg"}, {"id": "IMG_2156", "date": "2026-10-21", "time": "12:10", "title": "Signs to Hosshinmon-oji", "caption": "A junction with signs pointing on towards Hongū.", "lat": 33.856556, "lon": 135.717208, "alt": 255, "photo": "photos/IMG_2156.jpg", "thumb": "thumbs/IMG_2156.jpg"}, {"id": "IMG_2160", "date": "2026-10-21", "time": "12:34", "title": "Stone monument", "caption": "A memorial stone beside the trail.", "lat": 33.861642, "lon": 135.720992, "alt": 326, "photo": "photos/IMG_2160.jpg", "thumb": "thumbs/IMG_2160.jpg"}, {"id": "IMG_2162", "date": "2026-10-21", "time": "12:35", "title": "Stamp with a shrine gate", "caption": "One more for the card.", "lat": 33.861603, "lon": 135.721083, "alt": 328, "photo": "photos/IMG_2162.jpg", "thumb": "thumbs/IMG_2162.jpg"}, {"id": "IMG_2164", "date": "2026-10-21", "time": "13:14", "title": "Fushiogami-oji", "caption": "Where pilgrims traditionally got their first glimpse of Hongū and bowed.", "lat": 33.860214, "lon": 135.756775, "alt": 241, "photo": "photos/IMG_2164.jpg", "thumb": "thumbs/IMG_2164.jpg"}, {"id": "IMG_2166", "date": "2026-10-21", "time": "13:55", "title": "Trail selfie", "caption": "Four of us, all smiles, on a dry stretch of path.", "lat": 33.847233, "lon": 135.768967, "alt": 194, "photo": "photos/IMG_2166.jpg", "thumb": "thumbs/IMG_2166.jpg"}, {"id": "IMG_2170", "date": "2026-10-21", "time": "13:58", "title": "First view of Hongū", "caption": "Looking out over the valley from a lookout above town.", "lat": 33.847697, "lon": 135.769561, "alt": 219, "photo": "photos/IMG_2170.jpg", "thumb": "thumbs/IMG_2170.jpg"}, {"id": "IMG_2173", "date": "2026-10-21", "time": "14:15", "title": "Into Hongū", "caption": "Walking down the street into town.", "lat": 33.843097, "lon": 135.772475, "alt": 111, "photo": "photos/IMG_2173.jpg", "thumb": "thumbs/IMG_2173.jpg"}, {"id": "IMG_2174", "date": "2026-10-21", "time": "14:17", "title": "Haraido-oji stamp", "caption": "The last oji before the grand shrine.", "lat": 33.841689, "lon": 135.773011, "alt": 97, "photo": "photos/IMG_2174.jpg", "thumb": "thumbs/IMG_2174.jpg"}, {"id": "IMG_2176", "date": "2026-10-21", "time": "14:26", "title": "Stamps and leaflets", "caption": "Collecting the Hongū stamp and picking up maps.", "lat": 33.841156, "lon": 135.773103, "alt": 87, "photo": "photos/IMG_2176.jpg", "thumb": "thumbs/IMG_2176.jpg"}, {"id": "IMG_2179", "date": "2026-10-21", "time": "14:46", "title": "The steps to Kumano Hongū Taisha", "caption": "The long stone staircase lined with banners.", "lat": 33.839153, "lon": 135.774339, "alt": 65, "photo": "photos/IMG_2179.jpg", "thumb": "thumbs/IMG_2179.jpg"}, {"id": "IMG_2180", "date": "2026-10-21", "time": "14:47", "title": "Hongū Taisha gate", "caption": "The torii at the foot of the steps.", "lat": 33.838508, "lon": 135.774903, "alt": 60, "photo": "photos/IMG_2180.jpg", "thumb": "thumbs/IMG_2180.jpg"}, {"id": "IMG_2181", "date": "2026-10-21", "time": "14:47", "title": "Under the cedars", "caption": "The shrine gate framed by tall trees.", "lat": 33.838603, "lon": 135.774611, "alt": 60, "photo": "photos/IMG_2181.jpg", "thumb": "thumbs/IMG_2181.jpg"}, {"id": "IMG_2182", "date": "2026-10-21", "time": "14:48", "title": "Shrine pines", "caption": "Detail of the trees in the shrine grounds.", "lat": 33.838603, "lon": 135.774597, "alt": 59, "photo": "photos/IMG_2182.jpg", "thumb": "thumbs/IMG_2182.jpg"}, {"id": "IMG_2188", "date": "2026-10-21", "time": "15:31", "title": "Walking to the inn", "caption": "The group on the road after leaving Hongū.", "lat": 33.823728, "lon": 135.754639, "alt": 101, "photo": "photos/IMG_2188.jpg", "thumb": "thumbs/IMG_2188.jpg"}, {"id": "IMG_2191", "date": "2026-10-21", "time": "17:04", "title": "Well earned", "caption": "A cold bottle of Kirin at the inn.", "lat": 33.824211, "lon": 135.754197, "alt": 94, "photo": "photos/IMG_2191.jpg", "thumb": "thumbs/IMG_2191.jpg"}, {"id": "IMG_2195", "date": "2026-10-22", "time": "09:08", "lat": 33.821167, "lon": 135.791231, "alt": 65, "title": "Another stamp for the card", "caption": "Inking the next stamp, down in the river valley before the day's climb.", "photo": "photos/IMG_2195.jpg", "thumb": "thumbs/IMG_2195.jpg"}, {"id": "IMG_2196", "date": "2026-10-22", "time": "09:08", "title": "Ready to go", "caption": "Packs on in the village before the day's climb.", "lat": 33.821169, "lon": 135.7912, "alt": 64, "photo": "photos/IMG_2196.jpg", "thumb": "thumbs/IMG_2196.jpg"}, {"id": "IMG_2197", "date": "2026-10-22", "time": "09:54", "title": "Information board", "caption": "A stop among the ferns early in the climb.", "lat": 33.809519, "lon": 135.8163, "alt": 319, "photo": "photos/IMG_2197.jpg", "thumb": "thumbs/IMG_2197.jpg"}, {"id": "IMG_2204", "date": "2026-10-22", "time": "10:25", "title": "Ferns", "caption": "Sunlight through the undergrowth.", "lat": 33.800972, "lon": 135.8201, "alt": 461, "photo": "photos/IMG_2204.jpg", "thumb": "thumbs/IMG_2204.jpg"}, {"id": "IMG_2205", "date": "2026-10-22", "time": "10:25", "title": "Canopy", "caption": "Looking up through the trees.", "lat": 33.800964, "lon": 135.820083, "alt": 462, "photo": "photos/IMG_2205.jpg", "thumb": "thumbs/IMG_2205.jpg"}, {"id": "IMG_2208", "date": "2026-10-22", "time": "10:37", "title": "Ridge group shot", "caption": "Blue sky and mountains behind, at the lookout.", "lat": 33.800503, "lon": 135.820328, "alt": 464, "photo": "photos/IMG_2208.jpg", "thumb": "thumbs/IMG_2208.jpg"}, {"id": "IMG_2210", "date": "2026-10-22", "time": "10:38", "lat": 33.800494, "lon": 135.820328, "alt": 465, "title": "Clear skies from the ridge", "caption": "A lookout over the mountains, after the first climb of the morning.", "photo": "photos/IMG_2210.jpg", "thumb": "thumbs/IMG_2210.jpg"}, {"id": "IMG_2212", "date": "2026-10-22", "time": "11:06", "title": "Information board", "caption": "Among the cedars along the ridge.", "lat": 33.791078, "lon": 135.820678, "alt": 406, "photo": "photos/IMG_2212.jpg", "thumb": "thumbs/IMG_2212.jpg"}, {"id": "IMG_2213", "date": "2026-10-22", "time": "11:11", "title": "Teahouse stamp", "caption": "A stamp showing an old building.", "lat": 33.788278, "lon": 135.819169, "alt": 416, "photo": "photos/IMG_2213.jpg", "thumb": "thumbs/IMG_2213.jpg"}, {"id": "IMG_2215", "date": "2026-10-22", "time": "11:38", "title": "Sunny trail", "caption": "Dappled light on the path.", "lat": 33.779939, "lon": 135.829331, "alt": 451, "photo": "photos/IMG_2215.jpg", "thumb": "thumbs/IMG_2215.jpg"}, {"id": "IMG_2220", "date": "2026-10-22", "time": "11:54", "title": "Lunch on the trail", "caption": "Rice balls and treats wrapped in leaves.", "lat": 33.777983, "lon": 135.831694, "alt": 343, "photo": "photos/IMG_2220.jpg", "thumb": "thumbs/IMG_2220.jpg"}, {"id": "IMG_2223", "date": "2026-10-22", "time": "12:10", "title": "Checking the photos", "caption": "A break in the forest to look back at the morning's shots.", "lat": 33.7779, "lon": 135.831833, "alt": 405, "photo": "photos/IMG_2223.jpg", "thumb": "thumbs/IMG_2223.jpg"}, {"id": "IMG_2224", "date": "2026-10-22", "time": "12:26", "title": "Through the cedars", "caption": "The trail winding downhill towards Koguchi.", "lat": 33.777133, "lon": 135.831039, "alt": 405, "photo": "photos/IMG_2224.jpg", "thumb": "thumbs/IMG_2224.jpg"}, {"id": "IMG_2228", "date": "2026-10-22", "time": "13:20", "title": "Down at the river", "caption": "Crossing the bridge at Koguchi.", "lat": 33.763092, "lon": 135.845383, "alt": 72, "photo": "photos/IMG_2228.jpg", "thumb": "thumbs/IMG_2228.jpg"}, {"id": "IMG_2233", "date": "2026-10-22", "time": "13:23", "title": "Rest stop", "caption": "Packs off on the benches by the river.", "lat": 33.763047, "lon": 135.845581, "alt": 74, "photo": "photos/IMG_2233.jpg", "thumb": "thumbs/IMG_2233.jpg"}, {"id": "8bb9adcc", "date": "2026-10-22", "time": "13:55", "title": "Taking it easy", "caption": "Camp chairs in the sun at the Koguchi beer garden.", "lat": 33.759333, "lon": 135.840561, "alt": 57, "approx": true, "photo": "photos/8bb9adcc.jpg", "thumb": "thumbs/8bb9adcc.jpg"}, {"id": "d89f555c", "date": "2026-10-22", "time": "13:59", "title": "Afternoon at the beer garden", "caption": "Settling in at the Koguchi campground café.", "lat": 33.759333, "lon": 135.840561, "alt": 57, "approx": true, "photo": "photos/d89f555c.jpg", "thumb": "thumbs/d89f555c.jpg"}, {"id": "IMG_2241", "date": "2026-10-22", "time": "14:26", "lat": 33.759342, "lon": 135.840561, "alt": 57, "title": "A cold drink at Koguchi", "caption": "End of the day's walk, back down by the river in the village of Koguchi.", "photo": "photos/IMG_2241.jpg", "thumb": "thumbs/IMG_2241.jpg"}, {"id": "IMG_2242", "date": "2026-10-22", "time": "14:26", "title": "Koguchi beer garden", "caption": "The afternoon in the sun at the campground café.", "lat": 33.759333, "lon": 135.840561, "alt": 57, "photo": "photos/IMG_2242.jpg", "thumb": "thumbs/IMG_2242.jpg"}, {"id": "abfcc421", "date": "2026-10-22", "time": "16:02", "title": "Beer garden smiles", "caption": "Still at it later in the afternoon.", "lat": 33.759333, "lon": 135.840561, "alt": 57, "approx": true, "photo": "photos/abfcc421.jpg", "thumb": "thumbs/abfcc421.jpg"}, {"id": "IMG_2251", "date": "2026-10-23", "time": "06:59", "title": "Morning coffee", "caption": "The café and bar sign in Koguchi before the big climb.", "lat": 33.759422, "lon": 135.840606, "alt": 64, "photo": "photos/IMG_2251.jpg", "thumb": "thumbs/IMG_2251.jpg"}, {"id": "IMG_2255", "date": "2026-10-23", "time": "07:44", "title": "Start of the climb", "caption": "An information board at the foot of the Ogumotori-goe.", "lat": 33.740578, "lon": 135.844789, "alt": 365, "photo": "photos/IMG_2255.jpg", "thumb": "thumbs/IMG_2255.jpg"}, {"id": "IMG_2258", "date": "2026-10-23", "time": "08:01", "title": "Steep going", "caption": "The trail climbs hard through the forest.", "lat": 33.737872, "lon": 135.850661, "alt": 484, "photo": "photos/IMG_2258.jpg", "thumb": "thumbs/IMG_2258.jpg"}, {"id": "IMG_2261", "date": "2026-10-23", "time": "08:26", "title": "Stone paving", "caption": "Old stone steps through tall cedars.", "lat": 33.734181, "lon": 135.850922, "alt": 700, "photo": "photos/IMG_2261.jpg", "thumb": "thumbs/IMG_2261.jpg"}, {"id": "IMG_2264", "date": "2026-10-23", "time": "08:30", "title": "Roots and rocks", "caption": "Tree roots woven through the stone path.", "lat": 33.733714, "lon": 135.850508, "alt": 728, "photo": "photos/IMG_2264.jpg", "thumb": "thumbs/IMG_2264.jpg"}, {"id": "IMG_2268", "date": "2026-10-23", "time": "08:41", "title": "Catching breath", "caption": "A pause about 820 m up.", "lat": 33.730411, "lon": 135.849517, "alt": 824, "photo": "photos/IMG_2268.jpg", "thumb": "thumbs/IMG_2268.jpg"}, {"id": "IMG_2270", "date": "2026-10-23", "time": "08:57", "title": "Still smiling", "caption": "Walkers coming up the last of the climb.", "lat": 33.730208, "lon": 135.849364, "alt": 822, "photo": "photos/IMG_2270.jpg", "thumb": "thumbs/IMG_2270.jpg"}, {"id": "IMG_2275", "date": "2026-10-23", "time": "08:58", "lat": 33.730194, "lon": 135.849394, "alt": 820, "title": "The big climb", "caption": "Partway up the long climb out of Koguchi, early in the morning.", "photo": "photos/IMG_2275.jpg", "thumb": "thumbs/IMG_2275.jpg"}, {"id": "IMG_2279", "date": "2026-10-23", "time": "09:56", "title": "Teahouse ruins stamp", "caption": "The stamp from an old pilgrims' rest stop.", "lat": 33.714264, "lon": 135.851364, "alt": 719, "photo": "photos/IMG_2279.jpg", "thumb": "thumbs/IMG_2279.jpg"}, {"id": "IMG_2280", "date": "2026-10-23", "time": "10:28", "title": "Into Nachikatsuura", "caption": "A sign marking the town boundary, poncho on.", "lat": 33.704456, "lon": 135.858964, "alt": 818, "photo": "photos/IMG_2280.jpg", "thumb": "thumbs/IMG_2280.jpg"}, {"id": "IMG_2287", "date": "2026-10-23", "time": "10:54", "title": "Mist on the ridge", "caption": "A Kumano Kodo signpost where the trail meets a forest road.", "lat": 33.695767, "lon": 135.863419, "alt": 768, "photo": "photos/IMG_2287.jpg", "thumb": "thumbs/IMG_2287.jpg"}, {"id": "IMG_2291", "date": "2026-10-23", "time": "11:22", "title": "Highest point", "caption": "About 877 m, the highest photo of the walk, in the cedar mist.", "lat": 33.689675, "lon": 135.870392, "alt": 877, "photo": "photos/IMG_2291.jpg", "thumb": "thumbs/IMG_2291.jpg"}, {"id": "IMG_2295", "date": "2026-10-23", "time": "11:22", "title": "Arms up", "caption": "Celebrating the high point.", "lat": 33.689656, "lon": 135.870392, "alt": 877, "photo": "photos/IMG_2295.jpg", "thumb": "thumbs/IMG_2295.jpg"}, {"id": "IMG_2300", "date": "2026-10-23", "time": "12:27", "title": "Descending to Nachi", "caption": "A stone marker inscribed for the Kumano road.", "lat": 33.669067, "lon": 135.881242, "alt": 549, "photo": "photos/IMG_2300.jpg", "thumb": "thumbs/IMG_2300.jpg"}, {"id": "IMG_2301", "date": "2026-10-23", "time": "12:29", "title": "Nachi heritage map", "caption": "A board showing the shrine and temple complex below.", "lat": 33.669017, "lon": 135.881225, "alt": 550, "photo": "photos/IMG_2301.jpg", "thumb": "thumbs/IMG_2301.jpg"}, {"id": "IMG_2304", "date": "2026-10-23", "time": "12:40", "title": "Inscribed stone", "caption": "A big carved boulder near the end of the descent.", "lat": 33.668908, "lon": 135.881972, "alt": 542, "photo": "photos/IMG_2304.jpg", "thumb": "thumbs/IMG_2304.jpg"}, {"id": "IMG_2312", "date": "2026-10-23", "time": "13:19", "lat": 33.670792, "lon": 135.888961, "alt": 317, "title": "Seiganto-ji, Nachi", "caption": "The vermilion pagoda beside Kumano Nachi Taisha, the last of the three grand shrines.", "photo": "photos/IMG_2312.jpg", "thumb": "thumbs/IMG_2312.jpg"}, {"id": "IMG_2319", "date": "2026-10-23", "time": "13:34", "title": "Made it to Nachi", "caption": "At the shrine grounds after the long walk over.", "lat": 33.671181, "lon": 135.888992, "alt": 313, "photo": "photos/IMG_2319.jpg", "thumb": "thumbs/IMG_2319.jpg"}, {"id": "0ad59ac5", "date": "2026-10-23", "time": "14:03", "title": "Walking staffs", "caption": "At the Nachi car park, staffs in hand, after the descent.", "lat": 33.671181, "lon": 135.888992, "alt": 313, "approx": true, "photo": "photos/0ad59ac5.jpg", "thumb": "thumbs/0ad59ac5.jpg"}, {"id": "IMG_2321", "date": "2026-10-23", "time": "14:40", "title": "Katsuura", "caption": "Walking along the covered shopping street in town.", "lat": 33.627811, "lon": 135.942978, "alt": 5, "photo": "photos/IMG_2321.jpg", "thumb": "thumbs/IMG_2321.jpg"}, {"id": "IMG_2326", "date": "2026-10-23", "time": "18:51", "title": "Tuna dinner", "caption": "Fresh tuna being prepared at the counter in Katsuura, famous for its catch.", "lat": 33.626919, "lon": 135.949889, "alt": 12, "photo": "photos/IMG_2326.jpg", "thumb": "thumbs/IMG_2326.jpg"}, {"id": "IMG_2334", "date": "2026-10-24", "time": "08:42", "lat": 33.628369, "lon": 135.941406, "alt": 6, "title": "A kite in the rain", "caption": "A black kite on a power pole near Katsuura on the final morning.", "photo": "photos/IMG_2334.jpg", "thumb": "thumbs/IMG_2334.jpg"}];
+const DAYS = ["Arrival in Tanabe", "Takijiri to Chikatsuyu", "Chikatsuyu to Hongū", "Kogumotori-goe to Koguchi", "Ogumotori-goe to Nachi and Katsuura", "Katsuura"];
+const DAYCOL = ["#D2C1A8","#6FD3A0","#82BAF0","#C3A6EC","#F0C35F","#78D6D6"];
+
+const rad=Math.PI/180;
+const dUTC=s=>{const [y,m,d]=s.split('-').map(Number);return Date.UTC(y,m-1,d);};
+const firstDay=STOPS[0].date;
+const N=STOPS.length;
+const P=STOPS.map(s=>[s.lon,s.lat]);
+const TM=STOPS.map(s=>Date.parse(`${s.date}T${s.time}:00+09:00`));
+const DAY=STOPS.map(s=>Math.round((dUTC(s.date)-dUTC(firstDay))/864e5)+1);
+const hav=(a,b)=>{const dLat=(b[1]-a[1])*rad,dLon=(b[0]-a[0])*rad;
+  const x=Math.sin(dLat/2)**2+Math.cos(a[1]*rad)*Math.cos(b[1]*rad)*Math.sin(dLon/2)**2;return 2*6371000*Math.asin(Math.sqrt(x));};
+const brg=(a,b)=>{const y=Math.sin((b[0]-a[0])*rad)*Math.cos(b[1]*rad);
+  const x=Math.cos(a[1]*rad)*Math.sin(b[1]*rad)-Math.sin(a[1]*rad)*Math.cos(b[1]*rad)*Math.cos((b[0]-a[0])*rad);return Math.atan2(y,x)/rad;};
+const lerp=(a,b,u)=>a+(b-a)*u;
+const lerpP=(a,b,u)=>[lerp(a[0],b[0],u),lerp(a[1],b[1],u)];
+const angDiff=(a,b)=>((a-b)%360+540)%360-180;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const $=id=>document.getElementById(id);
+
+/* ---------- timeline ---------- */
+// Walking legs move at a steady replay speed; rides and overnights become short fly-overs.
+const SEG=[];let walkTotal=0;
+for(let i=0;i<N-1;i++){
+  const d=hav(P[i],P[i+1]);const hrs=Math.max((TM[i+1]-TM[i])/3.6e6,1/60);
+  const type=DAY[i]!==DAY[i+1]?'night':(d>1500&&d/1000/hrs>7)?'ride':'walk';
+  SEG.push({d,type});if(type==='walk')walkTotal+=d;
+}
+const WALK_SECONDS=130,DWELL=0.45,RIDE=2.8,NIGHT=3.6;
+const V=walkTotal/WALK_SECONDS;
+const TL=[];let T=0;
+for(let i=0;i<N;i++){
+  TL.push({k:'dwell',i,t0:T,t1:T+DWELL});T+=DWELL;
+  if(i<N-1){const s=SEG[i];const dur=s.type==='walk'?Math.max(0.1,s.d/V):s.type==='ride'?RIDE:NIGHT;
+    TL.push({k:'seg',i,type:s.type,t0:T,t1:T+dur});T+=dur;}
+}
+const TOTAL=T;
+function find(t){let lo=0,hi=TL.length-1;while(lo<hi){const m=(lo+hi+1)>>1;if(TL[m].t0<=t)lo=m;else hi=m-1;}return TL[lo];}
+function state(t){
+  t=clamp(t,0,TOTAL);const e=find(t);const i=e.i;
+  if(e.k==='dwell')return {e,i,u:0,pos:P[i],alt:STOPS[i].alt,clock:TM[i],day:DAY[i]};
+  const u=clamp((t-e.t0)/(e.t1-e.t0),0,1);const uu=e.type==='walk'?u:u*u*(3-2*u);
+  return {e,i,u,pos:lerpP(P[i],P[i+1],uu),alt:lerp(STOPS[i].alt,STOPS[i+1].alt,uu),
+    clock:e.type==='walk'?lerp(TM[i],TM[i+1],u):null,day:(e.type==='night'&&u>0.5)?DAY[i+1]:DAY[i]};
+}
+function aheadPoint(i,u,L){
+  let from=lerpP(P[i],P[i+1],u),rem=L,k=i;
+  while(k<N-1&&SEG[k].type==='walk'){const to=P[k+1];const d=hav(from,to);
+    if(d>=rem)return lerpP(from,to,rem/d);rem-=d;from=to;k++;}
+  return from;
+}
+
+/* ---------- camera ---------- */
+const baseZoom=()=>innerWidth<700?13.7:14.3;
+function camFor(st){
+  const Z=baseZoom(),e=st.e;let zoom=Z,pitch=62,target=null;
+  const walkDir=(j,u)=>{if(j<N-1&&SEG[j].type==='walk'){const from=lerpP(P[j],P[j+1],u);const a=aheadPoint(j,u,450);if(hav(from,a)>15)return brg(from,a);}return null;};
+  if(e.k==='dwell'||e.type==='walk'){
+    target=walkDir(st.i,e.k==='dwell'?0:st.u);
+    if(target==null&&st.i>0&&SEG[st.i-1].type==='walk'&&hav(P[st.i-1],P[st.i])>15)target=brg(P[st.i-1],P[st.i]);
+  }else{
+    const d=SEG[st.i].d,s=Math.sin(Math.PI*st.u),dip=clamp(Math.log2(Math.max(d,1)/1200),0,3.2);
+    zoom=Z-dip*s;pitch=62-16*s;
+    target=(st.u<0.55&&d>200)?brg(P[st.i],P[st.i+1]):walkDir(st.i+1,0);
+  }
+  return {center:st.pos,zoom,pitch,target};
+}
+
+/* ---------- formatting ---------- */
+const WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const jst=ms=>new Date(ms+9*3600e3);
+const fmtDate=ms=>{const d=jst(ms);return `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;};
+const fmtTime=ms=>{const d=jst(ms);return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;};
+
+/* ---------- height profile / scrubber ---------- */
+const prof=$('prof'),NS="http://www.w3.org/2000/svg";
+const mk=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e;};
+const PW=1000,PH=44,AMAX=950;
+const px=t=>t/TOTAL*PW,py=a=>PH-2-clamp(a,0,AMAX)/AMAX*(PH-6);
+let pd=`M0,${PH}`;for(const e of TL)pd+=`L${px(e.t0).toFixed(1)},${py(state(e.t0).alt).toFixed(1)}`;
+pd+=`L${PW},${py(STOPS[N-1].alt).toFixed(1)}L${PW},${PH}Z`;
+const defs=mk('defs',{},prof);const clip=mk('clipPath',{id:'done'},defs);const clipRect=mk('rect',{x:0,y:-10,width:0,height:PH+20},clip);
+mk('path',{d:pd,fill:'rgba(255,255,255,.14)',stroke:'rgba(255,255,255,.45)','stroke-width':1,'vector-effect':'non-scaling-stroke'},prof);
+mk('path',{d:pd,fill:'rgba(232,102,78,.45)',stroke:'#E8664E','stroke-width':1.5,'vector-effect':'non-scaling-stroke','clip-path':'url(#done)'},prof);
+const dayStart={};TL.forEach(e=>{if(e.k==='dwell'&&dayStart[DAY[e.i]]==null)dayStart[DAY[e.i]]=e.t0;});
+const days=Object.keys(dayStart).map(Number).sort((a,b)=>a-b);
+days.forEach((d,k)=>{const x=px(dayStart[d]);
+  if(k>0)mk('line',{x1:x,x2:x,y1:0,y2:PH,stroke:'rgba(255,255,255,.35)','stroke-width':1,'stroke-dasharray':'2 3','vector-effect':'non-scaling-stroke'},prof);
+  const next=k<days.length-1?dayStart[days[k+1]]:TOTAL;
+  if((next-dayStart[d])/TOTAL>0.07){const s=document.createElement('span');s.style.left=(x/PW*100)+'%';s.textContent='Day '+d;$('daylabels').appendChild(s);}
+});
+const head=mk('line',{x1:0,x2:0,y1:-4,y2:PH,stroke:'#fff','stroke-width':2,'vector-effect':'non-scaling-stroke'},prof);
+
+/* ---------- map ---------- */
+let map;
+const bounds=P.reduce((b,p)=>[[Math.min(b[0][0],p[0]),Math.min(b[0][1],p[1])],[Math.max(b[1][0],p[0]),Math.max(b[1][1],p[1])]],[[180,90],[-180,-90]]);
+const pad=()=>{const w=innerWidth,h=innerHeight;return {top:Math.min(120,h*.2),bottom:Math.min(130,h*.22),left:Math.min(50,w*.08),right:Math.min(50,w*.08)};};
+const style={version:8,
+  sources:{
+    sat:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:18,
+      attribution:'Imagery © <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics'},
+    dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,maxzoom:14,encoding:'terrarium',
+      attribution:'Terrain: <a href="https://registry.opendata.aws/terrain-tiles/">Mapzen / AWS Terrain Tiles</a>'},
+    hs:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,maxzoom:14,encoding:'terrarium'}
+  },
+  layers:[
+    {id:'bg',type:'background',paint:{'background-color':'#5E7466'}},
+    {id:'sat',type:'raster',source:'sat',paint:{'raster-saturation':-0.1,'raster-contrast':0.06}},
+    {id:'hill',type:'hillshade',source:'hs',paint:{'hillshade-exaggeration':0.3,'hillshade-shadow-color':'#0A1410','hillshade-highlight-color':'#FFFFFF','hillshade-accent-color':'#0A1410'}}
+  ],
+  terrain:{source:'dem',exaggeration:1.4}
+};
+try{
+  map=new maplibregl.Map({container:'map',style,bounds,fitBoundsOptions:{padding:pad()},maxPitch:80,attributionControl:false,fadeDuration:200});
+}catch(err){
+  document.body.insertAdjacentHTML('beforeend','<div class="msg">This replay needs a browser with 3D graphics turned on. <a href="index.html" style="color:inherit">Open the photo map instead</a>.</div>');
+  return;
+}
+map.addControl(new maplibregl.AttributionControl({compact:true}),'top-right');
+map.on('error',e=>console.warn(e&&e.error?e.error.message:e));
+
+const fc=f=>({type:'FeatureCollection',features:f});
+function runs(pred,upto){const feats=[];let cur=null;
+  for(let k=0;k<upto;k++){if(!pred(k)){cur=null;continue;}
+    if(!cur||cur.properties.day!==DAY[k]){cur={type:'Feature',properties:{day:DAY[k]},geometry:{type:'LineString',coordinates:[P[k]]}};feats.push(cur);}
+    cur.geometry.coordinates.push(P[k+1]);}
+  return feats;}
+const colorExpr=['match',['get','day']];DAYCOL.forEach((c,k)=>colorExpr.push(k+1,c));colorExpr.push('#FFFFFF');
+
+map.on('load',()=>{
+  if(map.setSky)map.setSky({'sky-color':'#8FB6D3','horizon-color':'#DCE6EA','fog-color':'#DCE6EA','sky-horizon-blend':0.6,'horizon-fog-blend':0.7,'fog-ground-blend':0.88,'atmosphere-blend':0});
+  map.addSource('walkAll',{type:'geojson',data:fc(runs(k=>SEG[k].type==='walk',N-1))});
+  map.addSource('moveAll',{type:'geojson',data:fc(SEG.map((s,k)=>s.type!=='walk'&&s.d>300?{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[P[k],P[k+1]]}}:null).filter(Boolean))});
+  map.addSource('done',{type:'geojson',data:fc([])});
+  map.addSource('stops',{type:'geojson',data:fc(STOPS.map((s,i)=>({type:'Feature',properties:{i,day:DAY[i]},geometry:{type:'Point',coordinates:P[i]}})))});
+  map.addSource('dot',{type:'geojson',data:{type:'Feature',properties:{},geometry:{type:'Point',coordinates:P[0]}}});
+  map.addLayer({id:'moveAll',type:'line',source:'moveAll',paint:{'line-color':'#FFFFFF','line-opacity':0.55,'line-width':1.6,'line-dasharray':[2,2]}});
+  map.addLayer({id:'walkAll',type:'line',source:'walkAll',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#FFFFFF','line-opacity':0.5,'line-width':2.5}});
+  map.addLayer({id:'doneCase',type:'line',source:'done',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#FFFFFF','line-width':7,'line-opacity':0.9}});
+  map.addLayer({id:'done',type:'line',source:'done',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':colorExpr,'line-width':4}});
+  map.addLayer({id:'stops',type:'circle',source:'stops',paint:{'circle-radius':3.2,'circle-color':'#FFFFFF','circle-opacity':0.85}});
+  map.addLayer({id:'stopsPassed',type:'circle',source:'stops',filter:['<=',['get','i'],-1],paint:{'circle-radius':4.5,'circle-color':colorExpr,'circle-stroke-color':'#FFFFFF','circle-stroke-width':1.5}});
+  map.addLayer({id:'dotHalo',type:'circle',source:'dot',paint:{'circle-radius':15,'circle-color':'#E8664E','circle-opacity':0.28}});
+  map.addLayer({id:'dot',type:'circle',source:'dot',paint:{'circle-radius':7,'circle-color':'#E8664E','circle-stroke-color':'#FFFFFF','circle-stroke-width':2.5}});
+  map.fitBounds(bounds,{padding:pad(),pitch:45,bearing:-12,duration:0});
+  const at=document.querySelector('.maplibregl-ctrl-attrib');if(at){at.classList.remove('maplibregl-compact-show');at.removeAttribute('open');}
+  ready=true;
+  $('startBtn').disabled=false;$('startLabel').textContent='Play the walk';
+});
+
+/* ---------- playback ---------- */
+let ready=false,t=0,playing=false,speed=1,camB=-12,lastFrame=null,blend=null,raf=null,lastI=-2,cardTimer=null;
+const mins=Math.max(1,Math.round(TOTAL/60));
+$('startHint').textContent=`About ${mins} minutes · ${N} photos pop up as you pass them`;
+
+let doneCache={upto:-1,feats:[]};
+function doneData(st){
+  if(doneCache.upto!==st.i)doneCache={upto:st.i,feats:runs(k=>SEG[k].type==='walk',st.i)};
+  let f=doneCache.feats;
+  if(st.e.k==='seg'&&st.e.type==='walk')f=f.concat([{type:'Feature',properties:{day:DAY[st.i]},geometry:{type:'LineString',coordinates:[P[st.i],st.pos]}}]);
+  return fc(f);
+}
+function showCard(i,sticky){
+  const s=STOPS[i];$('cardImg').src=s.thumb;$('cardImg').alt=s.title;$('cardTitle').textContent=s.title;
+  $('cardMeta').textContent=`Photo ${i+1} of ${N} · ${fmtTime(TM[i])}`;$('card').href='index.html#'+encodeURIComponent(s.id);
+  $('card').classList.add('show');clearTimeout(cardTimer);
+  if(!sticky)cardTimer=setTimeout(()=>{if(playing)$('card').classList.remove('show');},2800);
+  for(let k=i+1;k<=Math.min(N-1,i+4);k++){const im=new Image();im.src=STOPS[k].thumb;}
+}
+let tcShown=null;
+function title(day){
+  if(day===tcShown)return;tcShown=day;
+  if(day==null){$('titlecard').classList.remove('show');return;}
+  $('tcN').textContent='Day '+day+' · '+fmtDate(TM[DAY.indexOf(day)]);
+  $('tcT').textContent=DAYS[day-1]||'';$('titlecard').classList.add('show');
+}
+let hudKey='';
+function hud(st){
+  const dayTxt=`Day ${st.day} · ${DAYS[st.day-1]||''}`;
+  let sub;
+  if(st.e.k==='seg'&&st.e.type==='night')sub='Overnight';
+  else if(st.e.k==='seg'&&st.e.type==='ride')sub=`${fmtDate(TM[st.i])} · Transfer`;
+  else sub=`${fmtDate(st.clock)} · ${fmtTime(st.clock)} · ${Math.round(st.alt)} m`;
+  const key=dayTxt+sub;if(key===hudKey)return;hudKey=key;
+  $('hudDay').textContent=dayTxt;$('hudSub').textContent=sub;
+}
+function render(dt,smooth){
+  if(!ready)return;
+  const st=state(t),c=camFor(st);
+  if(c.target!=null)camB=smooth?camB+angDiff(c.target,camB)*(1-Math.exp(-dt*1.5*Math.min(speed,2))):c.target;
+  let cam={center:c.center,zoom:c.zoom,pitch:c.pitch,bearing:camB};
+  if(blend){
+    const k=clamp((performance.now()-blend.start)/blend.dur,0,1),e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2,f=blend.from;
+    cam={center:lerpP(f.center,cam.center,e),zoom:lerp(f.zoom,cam.zoom,e),pitch:lerp(f.pitch,cam.pitch,e),bearing:f.bearing+angDiff(cam.bearing,f.bearing)*e};
+    if(k>=1)blend=null;
+  }
+  map.jumpTo(cam);
+  map.getSource('dot').setData({type:'Feature',properties:{},geometry:{type:'Point',coordinates:st.pos}});
+  map.getSource('done').setData(doneData(st));
+  if(st.i!==lastI){
+    map.setFilter('stopsPassed',['<=',['get','i'],st.i]);
+    if(playing&&st.e.k==='dwell')showCard(st.i,false);else if(!playing)showCard(st.i,true);
+    lastI=st.i;
+  }
+  hud(st);
+  title(st.e.k==='seg'&&st.e.type==='night'?DAY[st.i+1]:(t<2.2&&playing?DAY[0]:null));
+  const x=px(t);clipRect.setAttribute('width',x);head.setAttribute('x1',x);head.setAttribute('x2',x);
+  $('track').setAttribute('aria-valuenow',Math.round(t/TOTAL*100));
+  $('track').setAttribute('aria-valuetext',`${$('hudDay').textContent}, ${$('hudSub').textContent}`);
+}
+function loop(now){
+  if(!playing){raf=null;return;}
+  const dt=lastFrame==null?0:Math.min(0.1,(now-lastFrame)/1000);lastFrame=now;
+  if(!(blend&&blend.hold))t+=dt*speed;
+  if(t>=TOTAL){t=TOTAL;render(dt,true);finish();return;}
+  render(dt,true);raf=requestAnimationFrame(loop);
+}
+const ICON_PLAY='M7 4.5v15l13-7.5z',ICON_PAUSE='M6 4.5h4.5v15H6zM13.5 4.5H18v15h-4.5z',ICON_AGAIN='M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z';
+function setIcon(d,label){$('playIcon').innerHTML=`<path d="${d}"/>`;$('play').setAttribute('aria-label',label);}
+function play(){
+  if(!ready)return;
+  if(t>=TOTAL){t=0;lastI=-2;}
+  $('start').hidden=true;
+  const fresh=t===0;
+  if(fresh){const c0=camFor(state(0));if(c0.target!=null)camB=c0.target;}
+  const c=map.getCenter();
+  blend={from:{center:[c.lng,c.lat],zoom:map.getZoom(),pitch:map.getPitch(),bearing:map.getBearing()},start:performance.now(),dur:fresh?2600:900,hold:fresh};
+  playing=true;lastFrame=null;setIcon(ICON_PAUSE,'Pause');
+  if(!raf)raf=requestAnimationFrame(loop);
+}
+function pause(){playing=false;setIcon(ICON_PLAY,'Play');if(raf){cancelAnimationFrame(raf);raf=null;}}
+function finish(){
+  pause();setIcon(ICON_AGAIN,'Replay from the start');title(null);
+  setTimeout(()=>{if(!playing)map.fitBounds(bounds,{padding:pad(),pitch:45,bearing:-12,duration:3000});},1200);
+}
+$('play').onclick=()=>playing?pause():play();
+$('startBtn').onclick=play;
+const SPEEDS=[1,2,4];
+$('speed').onclick=()=>{speed=SPEEDS[(SPEEDS.indexOf(speed)+1)%SPEEDS.length];$('speed').textContent=speed+'×';};
+
+/* scrubbing */
+const track=$('track');let dragging=false,wasPlaying=false;
+function seekX(x){const r=track.getBoundingClientRect();t=clamp((x-r.left)/r.width,0,1)*TOTAL;blend=null;$('start').hidden=true;render(0,false);}
+track.addEventListener('pointerdown',e=>{if(!ready)return;track.setPointerCapture(e.pointerId);dragging=true;wasPlaying=playing;if(playing)pause();seekX(e.clientX);});
+track.addEventListener('pointermove',e=>{if(dragging)seekX(e.clientX);});
+const endDrag=()=>{if(!dragging)return;dragging=false;if(wasPlaying&&t<TOTAL)play();};
+track.addEventListener('pointerup',endDrag);track.addEventListener('pointercancel',endDrag);
+track.addEventListener('keydown',e=>{
+  if(!ready)return;const step={ArrowRight:5,ArrowLeft:-5,PageUp:30,PageDown:-30}[e.key];
+  if(step!=null){e.preventDefault();t=clamp(t+step,0,TOTAL);blend=null;$('start').hidden=true;render(0,false);}
+  else if(e.key==='Home'||e.key==='End'){e.preventDefault();t=e.key==='Home'?0:TOTAL;blend=null;render(0,false);}
+});
+document.addEventListener('keydown',e=>{if(e.key===' '&&!(e.target.closest&&e.target.closest('button,a'))){e.preventDefault();playing?pause():play();}});
+addEventListener('resize',()=>{if(!playing&&ready&&$('start').hidden)render(0,false);});
+
+// test hooks
+window.__replay={seek:s=>{t=clamp(s,0,TOTAL);blend=null;$('start').hidden=true;render(0,false);},total:TOTAL,play,pause,get t(){return t;},get ready(){return ready;}};
+})();
+</script>
+</body>
+</html>
